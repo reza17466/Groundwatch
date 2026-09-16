@@ -15,27 +15,26 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 
-def fetch_dmi_precipitation(station_id: str = "06060", days: int = 30) -> pd.DataFrame:
+def fetch_dmi_precipitation(station_id: str = "06186", days: int = 30) -> pd.DataFrame:
     """
-    دریافت داده بارش از DMI Frie Data API.
+    دریافت داده بارش از DMI Frie Data API (نسخه ۲).
     
     Args:
-        station_id: شناسه ایستگاه هواشناسی (پیش‌فرض: 06060 = Copenhagen)
+        station_id: شناسه ایستگاه هواشناسی (پیش‌فرض: 06186 = Copenhagen)
         days: تعداد روزهای گذشته
     
     Returns:
         DataFrame با ستون‌های timestamp و precipitation_mm
     """
-    end = datetime.now()
+    end = datetime.utcnow()
     start = end - timedelta(days=days)
     
-    # DMI Frie Data API - Open Data
-    url = "https://opendataapi.dmi.dk/v1/observations"
+    # DMI Frie Data API v2 - Open Data (بدون نیاز به احراز هویت)
+    url = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
     params = {
         "stationId": station_id,
         "parameterId": "precip_past1h",
-        "from": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "to": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "datetime": f"{start.strftime('%Y-%m-%dT%H:%M:%SZ')}/{end.strftime('%Y-%m-%dT%H:%M:%SZ')}",
         "limit": 1000,
     }
     
@@ -51,7 +50,7 @@ def fetch_dmi_precipitation(station_id: str = "06060", days: int = 30) -> pd.Dat
             records.append({
                 "timestamp": props.get("observed"),
                 "precipitation_mm": props.get("value"),
-                "station_id": station_id,
+                "station_id": props.get("stationId"),
             })
         
         df = pd.DataFrame(records)
@@ -63,6 +62,9 @@ def fetch_dmi_precipitation(station_id: str = "06060", days: int = 30) -> pd.Dat
     
     except requests.exceptions.RequestException as e:
         print(f"خطا در دریافت داده DMI: {e}")
+        return pd.DataFrame()
+    except KeyError as e:
+        print(f"خطا در ساختار داده: {e}")
         return pd.DataFrame()
 
 
