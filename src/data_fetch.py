@@ -9,11 +9,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# مسیر ذخیره داده
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-# شناسه ایستگاه هواشناسی کپنهاگ (طبق مستندات DMI)
+# شناسه ایستگاه هواشناسی کپنهاگ
 COPENHAGEN_STATION_ID = "06186"
 
 
@@ -25,13 +24,12 @@ def fetch_dmi_precipitation(station_id: str = COPENHAGEN_STATION_ID, days: int =
     end = datetime.utcnow()
     start = end - timedelta(days=days)
 
-    # فرمت صحیح datetime: start/end (هر دو با Z در انتها)
     datetime_range = (
         f"{start.strftime('%Y-%m-%dT%H:%M:%SZ')}/"
         f"{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     )
 
-    # آدرس صحیح API نسخه ۲
+    # ✅ آدرس صحیح و جدید (بدون احراز هویت)
     url = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
     params = {
         "stationId": station_id,
