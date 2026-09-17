@@ -9,11 +9,15 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# مسیر ذخیره داده
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
+# شناسه ایستگاه هواشناسی کپنهاگ (طبق مستندات DMI)
+COPENHAGEN_STATION_ID = "06186"
 
-def fetch_dmi_precipitation(station_id: str = "06186", days: int = 30) -> pd.DataFrame:
+
+def fetch_dmi_precipitation(station_id: str = COPENHAGEN_STATION_ID, days: int = 30) -> pd.DataFrame:
     """
     دریافت داده بارش از DMI Frie Data API v2.
     از دسامبر ۲۰۲۵ نیازی به API Key نیست.
@@ -21,11 +25,13 @@ def fetch_dmi_precipitation(station_id: str = "06186", days: int = 30) -> pd.Dat
     end = datetime.utcnow()
     start = end - timedelta(days=days)
 
+    # فرمت صحیح datetime: start/end (هر دو با Z در انتها)
     datetime_range = (
         f"{start.strftime('%Y-%m-%dT%H:%M:%SZ')}/"
         f"{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     )
 
+    # آدرس صحیح API نسخه ۲
     url = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
     params = {
         "stationId": station_id,
@@ -51,7 +57,7 @@ def fetch_dmi_precipitation(station_id: str = "06186", days: int = 30) -> pd.Dat
         print(f"✅ تعداد رکورد دریافت‌شده: {len(features)}")
 
         if not features:
-            print("⚠️ پاسخ خالی است.")
+            print("⚠️ پاسخ خالی است. ممکن است پارامترها اشتباه باشند.")
             return pd.DataFrame()
 
         records = []
@@ -73,23 +79,34 @@ def fetch_dmi_precipitation(station_id: str = "06186", days: int = 30) -> pd.Dat
         return df
 
     except requests.exceptions.Timeout:
-        print("❌ خطا: درخواست به DMI timeout شد.")
+        print("❌ خطا: درخواست به DMI timeout شد (۶۰ ثانیه).")
+        return pd.DataFrame()
+    except requests.exceptions.ConnectionError:
+        print("❌ خطا: اتصال به DMI برقرار نشد.")
         return pd.DataFrame()
     except Exception as e:
-        print(f"❌ خطا: {type(e).__name__}: {e}")
+        print(f"❌ خطای غیرمنتظره: {type(e).__name__}: {e}")
         return pd.DataFrame()
 
 
 def save_to_csv(df: pd.DataFrame, filename: str) -> None:
+    """ذخیره DataFrame در فایل CSV"""
     if df.empty:
+        print("داده‌ای برای ذخیره وجود ندارد.")
         return
+
     path = DATA_DIR / filename
     df.to_csv(path, index=False)
-    print(f"✅ داده ذخیره شد: {path}")
+    print(f"✅ داده در {path} ذخیره شد ({len(df)} رکورد)")
 
 
 if __name__ == "__main__":
+    print("🌧️ دریافت داده بارش از DMI...")
     df = fetch_dmi_precipitation(days=30)
+
     if not df.empty:
         print(df.head())
+        print(f"\nتعداد رکورد: {len(df)}")
         save_to_csv(df, "dmi_precipitation.csv")
+    else:
+        print("⚠️ داده‌ای دریافت نشد. متن خطاهای بالا را بررسی کن.")
