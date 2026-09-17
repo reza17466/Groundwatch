@@ -1,25 +1,39 @@
 """
 دریافت داده از منابع باز دانمارک
-- DMI: داده‌های هواشناسی (بارش، دما)
-- GEUS: داده‌های سطح آب زیرزمینی (در نسخه بعدی)
+- DMI: داده‌های هواشناسی (بارش)
+- اگر API جواب نداد، داده نمونه تولید می‌شود (برای توسعه)
 """
 
 import requests
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-# شناسه ایستگاه هواشناسی کپنهاگ
 COPENHAGEN_STATION_ID = "06186"
+
+
+def generate_sample_data(days: int = 30) -> pd.DataFrame:
+    """تولید داده نمونه واقع‌گرایانه بارش برای توسعه."""
+    dates = pd.date_range(end=datetime.utcnow(), periods=days * 24, freq="h")
+    np.random.seed(42)
+    precip = np.random.exponential(0.3, len(dates))
+    precip[precip < 0.1] = 0
+    return pd.DataFrame({
+        "timestamp": dates,
+        "precipitation_mm": precip.round(2),
+        "station_id": "SAMPLE",
+        "parameter_id": "precip_past1h",
+    })
 
 
 def fetch_dmi_precipitation(station_id: str = COPENHAGEN_STATION_ID, days: int = 30) -> pd.DataFrame:
     """
     دریافت داده بارش از DMI Frie Data API v2.
-    از دسامبر ۲۰۲۵ نیازی به API Key نیست.
+    اگر API جواب نداد، داده نمونه برمی‌گرداند.
     """
     end = datetime.utcnow()
     start = end - timedelta(days=days)
@@ -29,7 +43,6 @@ def fetch_dmi_precipitation(station_id: str = COPENHAGEN_STATION_ID, days: int =
         f"{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     )
 
-    # ✅ آدرس صحیح و جدید (بدون احراز هویت)
     url = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
     params = {
         "stationId": station_id,
@@ -38,73 +51,38 @@ def fetch_dmi_precipitation(station_id: str = COPENHAGEN_STATION_ID, days: int =
         "limit": 1000,
     }
 
-    print(f"🔍 درخواست به: {url}")
-    print(f"📋 پارامترها: {params}")
-
     try:
-        response = requests.get(url, params=params, timeout=60)
-        print(f"📡 وضعیت پاسخ: {response.status_code}")
+        response = requests.get(url, params=params, timeout=30)
 
-        if response.status_code != 200:
-            print(f"❌ خطای HTTP: {response.status_code}")
-            print(f"📄 متن پاسخ: {response.text[:500]}")
-            return pd.DataFrame()
-
-        data = response.json()
-        features = data.get("features", [])
-        print(f"✅ تعداد رکورد دریافت‌شده: {len(features)}")
-
-        if not features:
-            print("⚠️ پاسخ خالی است. ممکن است پارامترها اشتباه باشند.")
-            return pd.DataFrame()
-
-        records = []
-        for feature in features:
-            props = feature.get("properties", {})
-            records.append({
-                "timestamp": props.get("observed"),
-                "precipitation_mm": props.get("value"),
-                "station_id": props.get("stationId"),
-                "parameter_id": props.get("parameterId"),
-            })
-
-        df = pd.DataFrame(records)
-        if not df.empty:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            print(f"📊 تعداد رکورد نهایی: {len(df)}")
-
-        return df
-
-    except requests.exceptions.Timeout:
-        print("❌ خطا: درخواست به DMI timeout شد (۶۰ ثانیه).")
-        return pd.DataFrame()
-    except requests.exceptions.ConnectionError:
-        print("❌ خطا: اتصال به DMI برقرار نشد.")
-        return pd.DataFrame()
+        if response.status_code == 200:
+            data = response.json()
+            features = data.get("features", [])
+            if features:
+                records = []
+                for feature in features:
+                    props = feature.get("properties", {})
+                    records.append({
+                        "timestamp": props.get("observed"),
+                        "precipitation_mm": props.get("value"),
+                        "station_id": props.get("stationId"),
+                        "parameter_id": props.get("parameterId"),
+                    })
+                df = pd.DataFrame(records)
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                df = df.sort_values("timestamp").reset_index(drop=True)
+                print(f"✅ داده واقعی DMI دریافت شد: {len(df)} رکورد")
+                return df
     except Exception as e:
-        print(f"❌ خطای غیرمنتظره: {type(e).__name__}: {e}")
-        return pd.DataFrame()
+        print(f"⚠️ خطا در API: {e}")
+
+    # اگر API کار نکرد، داده نمونه
+    print("⚠️ API در دسترس نیست — استفاده از داده نمونه")
+    return generate_sample_data(days)
 
 
 def save_to_csv(df: pd.DataFrame, filename: str) -> None:
-    """ذخیره DataFrame در فایل CSV"""
     if df.empty:
-        print("داده‌ای برای ذخیره وجود ندارد.")
         return
-
     path = DATA_DIR / filename
     df.to_csv(path, index=False)
-    print(f"✅ داده در {path} ذخیره شد ({len(df)} رکورد)")
-
-
-if __name__ == "__main__":
-    print("🌧️ دریافت داده بارش از DMI...")
-    df = fetch_dmi_precipitation(days=30)
-
-    if not df.empty:
-        print(df.head())
-        print(f"\nتعداد رکورد: {len(df)}")
-        save_to_csv(df, "dmi_precipitation.csv")
-    else:
-        print("⚠️ داده‌ای دریافت نشد. متن خطاهای بالا را بررسی کن.")
+    print(f"✅ داده ذخیره شد: {path}")
