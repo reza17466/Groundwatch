@@ -31,12 +31,11 @@ def fetch_geus_water_level_data():
         "OUTPUTFORMAT": "application/json",
         "COUNT": "500",
     }
-    # ساخت URL کامل
     query_string = "&".join([f"{k}={quote(str(v))}" for k, v in params.items()])
     full_url = f"{wfs_url}?{query_string}"
 
-    # استفاده از Proxy رایگان AllOrigins
-    proxy_url = f"https://api.allorigins.win/raw?url={quote(full_url)}"
+    # استفاده از Proxy رایگان (Codetabs)
+    proxy_url = f"https://api.codetabs.com/v1/proxy?quest={quote(full_url)}"
 
     try:
         response = requests.get(proxy_url, timeout=40)
@@ -71,6 +70,7 @@ def fetch_geus_water_level_data():
 
     except Exception as e:
         return pd.DataFrame(), f"error: {str(e)}"
+
 
 def generate_sample_groundwater_data(n=100):
     """تولید داده نمونه در صورت عدم دسترسی به سرویس GEUS."""
@@ -122,18 +122,7 @@ with tab1:
 # ---------- تب ۲: آب زیرزمینی ----------
 with tab2:
     st.header("داده سطح آب زیرزمینی — GEUS دانمارک")
-
-    st.markdown("""
-    **راهنما:**
-    - برای دریافت داده واقعی، روی دکمه زیر کلیک کن. (ممکن است به دلیل محدودیت IP کار نکند)
-    - اگر کار نکرد، می‌توانی یک فایل CSV از داده‌های GEUS دانلود کنی و در کادر زیر آپلود کنی.
-    - [لینک دانلود داده از GEUS](https://data.geus.dk/JupiterWWW/)
-    """)
-
-    uploaded_gw = st.file_uploader(
-        "آپلود فایل CSV آب زیرزمینی (اختیاری)", type=["csv"], key="gw_upload"
-    )
-
+    
     if st.button("دریافت داده واقعی از GEUS (با Proxy)", type="primary", key="gw_btn"):
         with st.spinner("در حال اتصال به سرویس GEUS از طریق Proxy..."):
             df_gw, status = fetch_geus_water_level_data()
@@ -170,19 +159,6 @@ with tab2:
         with st.expander("📄 داده خام"):
             st.dataframe(df_gw.head(100))
 
-    # اگر فایل CSV آپلود شد، آن را پردازش کن
-    if uploaded_gw is not None:
-        try:
-            df_uploaded = pd.read_csv(uploaded_gw)
-            st.success(f"✅ {len(df_uploaded)} رکورد از فایل آپلود شده خوانده شد")
-            st.subheader("📄 داده آپلود شده")
-            st.dataframe(df_uploaded.head(100))
-            if "vandstand" in df_uploaded.columns:
-                st.subheader("📈 نمودار سطح آب")
-                st.line_chart(df_uploaded["vandstand"])
-        except Exception as e:
-            st.error(f"خطا در خواندن فایل: {e}")
-
 # ---------- تب ۳: پیش‌بینی و هشدار ----------
 with tab3:
     st.header("پیش‌بینی و هشدار زودهنگام")
@@ -217,4 +193,4 @@ with tab3:
     col3.metric("تغییر (m)", round(forecast[-1] - historical[-1], 2))
 
 st.divider()
-st.caption("GroundWatch — MVP v0.4 — Reza Chash")
+st.caption("GroundWatch — MVP v0.5 — Reza Chash")
