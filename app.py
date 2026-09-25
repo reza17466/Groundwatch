@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import requests
-from io import StringIO
+from urllib.parse import quote
 
 st.set_page_config(page_title="GroundWatch", page_icon="💧", layout="wide")
 
@@ -18,9 +18,10 @@ st.divider()
 @st.cache_data(ttl=3600)
 def fetch_geus_water_level_data():
     """
-    دریافت داده‌های واقعی سطح آب زیرزمینی از سرویس WFS سازمان GEUS.
+    دریافت داده‌های واقعی سطح آب زیرزمینی از سرویس WFS سازمان GEUS
+    با استفاده از یک سرور واسطه (Proxy) برای عبور از محدودیت IP.
     """
-    # سرویس WFS برای لایه اندازه‌گیری سطح آب (jupiter_pejlinger)
+    # آدرس اصلی WFS
     wfs_url = "https://data.geus.dk/geusmap/ows/25832.jsp"
     params = {
         "SERVICE": "WFS",
@@ -28,11 +29,17 @@ def fetch_geus_water_level_data():
         "REQUEST": "GetFeature",
         "TYPENAME": "jupiter_pejlinger",
         "OUTPUTFORMAT": "application/json",
-        "COUNT": "2000",  # محدود کردن تعداد رکوردها برای سرعت
+        "COUNT": "500",
     }
+    # ساخت URL کامل
+    query_string = "&".join([f"{k}={quote(str(v))}" for k, v in params.items()])
+    full_url = f"{wfs_url}?{query_string}"
+
+    # استفاده از Proxy رایگان AllOrigins
+    proxy_url = f"https://api.allorigins.win/raw?url={quote(full_url)}"
 
     try:
-        response = requests.get(wfs_url, params=params, timeout=30)
+        response = requests.get(proxy_url, timeout=40)
         response.raise_for_status()
         data = response.json()
 
@@ -49,14 +56,13 @@ def fetch_geus_water_level_data():
             records.append({
                 "dgunr": props.get("dgunr"),
                 "dato": props.get("dato"),
-                "vandstand": props.get("kote"),  # سطح آب بر حسب متر
+                "vandstand": props.get("kote"),
                 "magasin": props.get("magasin"),
                 "lon": coords[0] if len(coords) > 0 else None,
                 "lat": coords[1] if len(coords) > 1 else None,
             })
 
         df = pd.DataFrame(records)
-
         if not df.empty and "dato" in df.columns:
             df["dato"] = pd.to_datetime(df["dato"], errors="coerce")
             df = df.dropna(subset=["dato"]).sort_values("dato", ascending=False)
@@ -65,7 +71,6 @@ def fetch_geus_water_level_data():
 
     except Exception as e:
         return pd.DataFrame(), f"error: {str(e)}"
-
 
 def generate_sample_groundwater_data(n=100):
     """تولید داده نمونه در صورت عدم دسترسی به سرویس GEUS."""
@@ -118,50 +123,65 @@ with tab1:
 with tab2:
     st.header("داده سطح آب زیرزمینی — GEUS دانمارک")
 
-    if st.button("دریافت داده واقعی از GEUS", type="primary", key="gw_btn"):
-        with st.spinner("در حال اتصال به سرویس WFS سازمان GEUS..."):
+    st.markdown("""
+    **راهنما:**
+    - برای دریافت داده واقعی، روی دکمه زیر کلیک کن. (ممکن است به دلیل محدودیت IP کار نکند)
+    - اگر کار نکرد، می‌توانی یک فایل CSV از داده‌های GEUS دانلود کنی و در کادر زیر آپلود کنی.
+    - [لینک دانلود داده از GEUS](https://data.geus.dk/JupiterWWW/)
+    """)
+
+    uploaded_gw = st.file_uploader(
+        "آپلود فایل CSV آب زیرزمینی (اختیاری)", type=["csv"], key="gw_upload"
+    )
+
+    if st.button("دریافت داده واقعی از GEUS (با Proxy)", type="primary", key="gw_btn"):
+        with st.spinner("در حال اتصال به سرویس GEUS از طریق Proxy..."):
             df_gw, status = fetch_geus_water_level_data()
 
         if status == "real" and not df_gw.empty:
             st.success(f"✅ {len(df_gw)} رکورد واقعی سطح آب از GEUS دریافت شد")
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("تعداد اندازه‌گیری", len(df_gw))
-            if "vandstand" in df_gw.columns:
-                col2.metric("میانگین سطح آب (m)", round(df_gw["vandstand"].mean(), 2))
-                col3.metric("حداکثر سطح آب (m)", round(df_gw["vandstand"].max(), 2))
-
-            # نقشه
-            if "lat" in df_gw.columns and "lon" in df_gw.columns:
-                map_data = df_gw[["lat", "lon"]].dropna()
-                if not map_data.empty:
-                    st.subheader("🗺️ نقشه نقاط اندازه‌گیری")
-                    st.map(map_data)
-
-            # نمودار سری زمانی
-            if "dato" in df_gw.columns and "vandstand" in df_gw.columns:
-                st.subheader("📈 روند سطح آب در زمان")
-                chart_df = df_gw[["dato", "vandstand"]].dropna().set_index("dato")
-                st.line_chart(chart_df["vandstand"])
-
-            # توزیع سطح آب
-            if "vandstand" in df_gw.columns:
-                st.subheader("📊 توزیع سطح آب")
-                st.bar_chart(df_gw["vandstand"].value_counts().sort_index().head(30))
-
-            with st.expander("📄 داده خام"):
-                st.dataframe(df_gw.head(100))
-
         else:
             st.warning(f"⚠️ سرویس GEUS در دسترس نیست ({status}) — نمایش داده نمونه")
             df_gw = generate_sample_groundwater_data()
-            col1, col2, col3 = st.columns(3)
-            col1.metric("تعداد چاه (نمونه)", len(df_gw))
+
+        # نمایش داده
+        col1, col2, col3 = st.columns(3)
+        col1.metric("تعداد اندازه‌گیری", len(df_gw))
+        if "vandstand" in df_gw.columns:
+            col2.metric("میانگین سطح آب (m)", round(df_gw["vandstand"].mean(), 2))
+            col3.metric("حداکثر سطح آب (m)", round(df_gw["vandstand"].max(), 2))
+        elif "boredybde" in df_gw.columns:
             col2.metric("میانگین عمق (m)", round(df_gw["boredybde"].mean(), 1))
             col3.metric("میانگین ارتفاع (m)", round(df_gw["terrænkote"].mean(), 1))
+
+        if "lat" in df_gw.columns and "lon" in df_gw.columns:
+            st.subheader("🗺️ نقشه نقاط اندازه‌گیری")
             st.map(df_gw[["lat", "lon"]].dropna())
-            with st.expander("📄 داده خام"):
-                st.dataframe(df_gw.head(100))
+
+        if "dato" in df_gw.columns and "vandstand" in df_gw.columns:
+            st.subheader("📈 روند سطح آب در زمان")
+            chart_df = df_gw[["dato", "vandstand"]].dropna().set_index("dato")
+            st.line_chart(chart_df["vandstand"])
+
+        if "vandstand" in df_gw.columns:
+            st.subheader("📊 توزیع سطح آب")
+            st.bar_chart(df_gw["vandstand"].value_counts().sort_index().head(30))
+
+        with st.expander("📄 داده خام"):
+            st.dataframe(df_gw.head(100))
+
+    # اگر فایل CSV آپلود شد، آن را پردازش کن
+    if uploaded_gw is not None:
+        try:
+            df_uploaded = pd.read_csv(uploaded_gw)
+            st.success(f"✅ {len(df_uploaded)} رکورد از فایل آپلود شده خوانده شد")
+            st.subheader("📄 داده آپلود شده")
+            st.dataframe(df_uploaded.head(100))
+            if "vandstand" in df_uploaded.columns:
+                st.subheader("📈 نمودار سطح آب")
+                st.line_chart(df_uploaded["vandstand"])
+        except Exception as e:
+            st.error(f"خطا در خواندن فایل: {e}")
 
 # ---------- تب ۳: پیش‌بینی و هشدار ----------
 with tab3:
@@ -197,4 +217,4 @@ with tab3:
     col3.metric("تغییر (m)", round(forecast[-1] - historical[-1], 2))
 
 st.divider()
-st.caption("GroundWatch — MVP v0.3 — Reza Chash")
+st.caption("GroundWatch — MVP v0.4 — Reza Chash")
