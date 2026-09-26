@@ -4,3 +4,4 @@ requests==2.32.3
 plotly==5.23.0
 prophet==1.1.5
 python-dotenv==1.0.1
+fpdf2
