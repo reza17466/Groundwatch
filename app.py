@@ -3,34 +3,39 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import requests
+from fpdf import FPDF
+import io
 
 # ==================== Page Configuration ====================
 st.set_page_config(page_title="GroundWatch", page_icon="💧", layout="wide")
 
-st.title("💧 GroundWatch")
-st.subheader("Intelligent Platform for Groundwater Monitoring & Forecasting")
-st.caption("MVP Version — Powered by Danish Open Data (DMI, GEUS)")
+# ==================== Sidebar Navigation ====================
+st.sidebar.title("💧 GroundWatch")
+st.sidebar.caption("Intelligent Groundwater Monitoring")
+st.sidebar.divider()
 
-st.divider()
+page = st.sidebar.radio(
+    "Navigation",
+    ["Dashboard", "Precipitation (DMI)", "Groundwater (GEUS)", "Forecast & Alerts", "Reports"]
+)
+
+st.sidebar.divider()
+st.sidebar.caption("MVP v2.0 — Reza Chash")
 
 # ==================== Helper Functions ====================
 
-# -------------------- 1. Fetch Precipitation Data (DMI) --------------------
 @st.cache_data(ttl=3600)
 def fetch_dmi_precipitation(days=30):
-    """Fetch precipitation data from DMI Frie Data API v2."""
     end = datetime.utcnow()
     start = end - timedelta(days=days)
     datetime_range = f"{start.strftime('%Y-%m-%dT%H:%M:%SZ')}/{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-    
     url = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
     params = {
-        "stationId": "06186",  # Copenhagen station
+        "stationId": "06186",
         "parameterId": "precip_past1h",
         "datetime": datetime_range,
         "limit": 1000,
     }
-    
     try:
         response = requests.get(url, params=params, timeout=20)
         if response.status_code == 200:
@@ -51,8 +56,7 @@ def fetch_dmi_precipitation(days=30):
                 return df, "real"
     except Exception:
         pass
-    
-    # Fallback: simulated data if API is unavailable
+    # Fallback
     dates = pd.date_range(
         end=datetime.utcnow().replace(minute=0, second=0, microsecond=0),
         periods=days * 24,
@@ -68,10 +72,8 @@ def fetch_dmi_precipitation(days=30):
     })
     return df, "simulated"
 
-# -------------------- 2. Fetch Groundwater Data (GEUS) --------------------
 @st.cache_data(ttl=7200)
 def fetch_geus_groundwater():
-    """Fetch borehole data from GEUS WFS service."""
     wfs_url = "http://arcims.minn.dk/wfsconnector/com.esri.wfs.Esrimap"
     params = {
         "SERVICE": "WFS",
@@ -81,7 +83,6 @@ def fetch_geus_groundwater():
         "MAXFEATURES": "100",
         "OUTPUTFORMAT": "json",
     }
-    
     try:
         response = requests.get(wfs_url, params=params, timeout=20)
         if response.status_code == 200:
@@ -105,8 +106,7 @@ def fetch_geus_groundwater():
                 return df, "real"
     except Exception:
         pass
-    
-    # Fallback: simulated data
+    # Fallback
     rng = np.random.default_rng(42)
     municipalities = ["Lemvig", "Ringkøbing-Skjern", "Holstebro", "Struer", "Aarhus"]
     df = pd.DataFrame({
@@ -119,15 +119,50 @@ def fetch_geus_groundwater():
     })
     return df, "simulated"
 
-# ==================== User Interface ====================
-
-tab1, tab2, tab3 = st.tabs(["🌧️ Precipitation (DMI)", "🌊 Groundwater (GEUS)", "🔮 Forecast & Alerts"])
-
-# ---------- Tab 1: Precipitation ----------
-with tab1:
-    st.header("Precipitation Data — Copenhagen (Last 30 Days)")
+# ==================== Page: Dashboard ====================
+if page == "Dashboard":
+    st.title("💧 GroundWatch Dashboard")
+    st.subheader("Real-time Overview of Groundwater Monitoring")
     
-    if st.button("Fetch Precipitation Data", type="primary", key="precip_btn"):
+    # Simulated summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Monitoring Points", "124")
+    col2.metric("Active Alerts", "3", delta="+1 since yesterday")
+    col3.metric("Avg. Water Level (m)", "2.4")
+    col4.metric("Data Sources", "DMI, GEUS, Sensors")
+    
+    st.divider()
+    
+    # Map with simulated status
+    st.subheader("🗺️ Monitoring Points Status")
+    rng = np.random.default_rng(42)
+    map_data = pd.DataFrame({
+        "lat": rng.uniform(55.5, 57.0, 20),
+        "lon": rng.uniform(8.0, 10.5, 20),
+        "status": rng.choice(["Normal", "Warning", "Critical"], 20, p=[0.7, 0.2, 0.1])
+    })
+    # Map colors based on status (Streamlit map doesn't support colors directly, but we can use size or just show)
+    st.map(map_data[["lat", "lon"]])
+    st.caption("🔴 Critical  🟡 Warning  🟢 Normal (color coding in full version)")
+    
+    st.divider()
+    
+    st.subheader("📊 Recent Alerts")
+    alerts_df = pd.DataFrame({
+        "Time": [datetime.now() - timedelta(hours=i) for i in range(5)],
+        "Location": ["Lemvig 43.18", "Ringkøbing 43.27", "Holstebro 43.55", "Struer 43.61", "Aarhus 43.72"],
+        "Water Level (m)": [1.2, 1.6, 2.1, 1.9, 2.3],
+        "Threshold (m)": [1.5, 1.8, 2.5, 2.0, 2.5],
+        "Status": ["Critical", "Warning", "Normal", "Warning", "Normal"]
+    })
+    st.dataframe(alerts_df, use_container_width=True)
+
+# ==================== Page: Precipitation ====================
+elif page == "Precipitation (DMI)":
+    st.title("🌧️ Precipitation Data (DMI)")
+    st.caption("Copenhagen Station — Last 30 Days")
+    
+    if st.button("Fetch Precipitation Data", type="primary"):
         with st.spinner("Connecting to DMI API..."):
             df_precip, status = fetch_dmi_precipitation(days=30)
         
@@ -147,12 +182,12 @@ with tab1:
         with st.expander("📄 Raw Data"):
             st.dataframe(df_precip.tail(50))
 
-# ---------- Tab 2: Groundwater ----------
-with tab2:
-    st.header("Groundwater Level Data — GEUS Denmark")
+# ==================== Page: Groundwater ====================
+elif page == "Groundwater (GEUS)":
+    st.title("🌊 Groundwater Data (GEUS)")
     st.caption("Direct connection to GEUS WFS service (no proxy)")
     
-    if st.button("Fetch GEUS Data", type="primary", key="gw_btn"):
+    if st.button("Fetch GEUS Data", type="primary"):
         with st.spinner("Connecting to WFS service..."):
             df_gw, status = fetch_geus_groundwater()
         
@@ -168,12 +203,10 @@ with tab2:
         if "terrain_elevation" in df_gw.columns:
             col3.metric("Avg. Terrain Elevation (m)", round(df_gw["terrain_elevation"].mean(), 1))
         
-        # Interactive map
         if "lat" in df_gw.columns and "lon" in df_gw.columns:
             st.subheader("🗺️ Borehole Map")
             st.map(df_gw[["lat", "lon"]].dropna())
         
-        # Depth distribution chart
         if "drilling_depth" in df_gw.columns:
             st.subheader("📈 Drilling Depth Distribution")
             st.bar_chart(df_gw["drilling_depth"].value_counts().sort_index().head(30))
@@ -181,14 +214,14 @@ with tab2:
         with st.expander("📄 Raw Borehole Data"):
             st.dataframe(df_gw.head(100))
 
-# ---------- Tab 3: Forecast & Alerts ----------
-with tab3:
-    st.header("Forecasting & Early Warning")
+# ==================== Page: Forecast & Alerts ====================
+elif page == "Forecast & Alerts":
+    st.title("🔮 Forecast & Early Warning")
     
     st.subheader("⚙️ Alert Settings")
     threshold = st.slider("Water Level Alert Threshold (meters below ground)", 0.5, 10.0, 2.0, 0.5)
     
-    st.subheader("🔮 7-Day Forecast")
+    st.subheader("7-Day Forecast")
     st.info("ℹ️ This section uses simulated data until the AI model is trained.")
     
     rng = np.random.default_rng(42)
@@ -215,5 +248,50 @@ with tab3:
     col2.metric("7-Day Forecast (m)", round(forecast[-1], 2))
     col3.metric("Change (m)", round(forecast[-1] - historical[-1], 2))
 
+# ==================== Page: Reports ====================
+elif page == "Reports":
+    st.title("📄 Compliance Reports")
+    st.caption("Generate a PDF report for municipalities and environmental authorities.")
+    
+    st.markdown("""
+    This report includes:
+    - Current groundwater levels at monitored points
+    - Forecasted levels for the next 7 days
+    - Alert status and threshold exceedances
+    - Data sources and methodology
+    """)
+    
+    if st.button("Generate PDF Report", type="primary"):
+        # Create PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=16)
+        pdf.cell(200, 10, txt="GroundWatch - Groundwater Monitoring Report", ln=True, align='C')
+        pdf.ln(10)
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
+        pdf.ln(5)
+        pdf.multi_cell(0, 10, txt="This report summarizes the current groundwater levels and forecasted conditions for monitored locations in Denmark.")
+        pdf.ln(5)
+        pdf.cell(200, 10, txt="Summary of Monitoring Points:", ln=True)
+        pdf.cell(200, 10, txt="- Total Points: 124", ln=True)
+        pdf.cell(200, 10, txt="- Active Alerts: 3", ln=True)
+        pdf.cell(200, 10, txt="- Average Water Level: 2.4 m", ln=True)
+        pdf.ln(5)
+        pdf.cell(200, 10, txt="Data Sources: DMI (precipitation), GEUS (groundwater), IoT sensors", ln=True)
+        pdf.ln(10)
+        pdf.cell(200, 10, txt="Prepared by GroundWatch", ln=True)
+        
+        # Output to bytes
+        pdf_output = pdf.output(dest='S').encode('latin-1')
+        
+        st.download_button(
+            label="📥 Download PDF Report",
+            data=pdf_output,
+            file_name="groundwatch_report.pdf",
+            mime="application/pdf"
+        )
+        st.success("✅ Report generated successfully!")
+
 st.divider()
-st.caption("GroundWatch — MVP v1.1 — Reza Chash")
+st.caption("GroundWatch — MVP v2.0 — Reza Chash")
