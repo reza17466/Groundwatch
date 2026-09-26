@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import requests
-from fpdf import FPDF
-import io
 
 # ==================== Page Configuration ====================
 st.set_page_config(page_title="GroundWatch", page_icon="💧", layout="wide")
@@ -20,7 +18,7 @@ page = st.sidebar.radio(
 )
 
 st.sidebar.divider()
-st.sidebar.caption("MVP v2.0 — Reza Chash")
+st.sidebar.caption("MVP v2.1 — Reza Chash")
 
 # ==================== Helper Functions ====================
 
@@ -56,7 +54,6 @@ def fetch_dmi_precipitation(days=30):
                 return df, "real"
     except Exception:
         pass
-    # Fallback
     dates = pd.date_range(
         end=datetime.utcnow().replace(minute=0, second=0, microsecond=0),
         periods=days * 24,
@@ -106,7 +103,6 @@ def fetch_geus_groundwater():
                 return df, "real"
     except Exception:
         pass
-    # Fallback
     rng = np.random.default_rng(42)
     municipalities = ["Lemvig", "Ringkøbing-Skjern", "Holstebro", "Struer", "Aarhus"]
     df = pd.DataFrame({
@@ -124,7 +120,6 @@ if page == "Dashboard":
     st.title("💧 GroundWatch Dashboard")
     st.subheader("Real-time Overview of Groundwater Monitoring")
     
-    # Simulated summary metrics
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Monitoring Points", "124")
     col2.metric("Active Alerts", "3", delta="+1 since yesterday")
@@ -133,16 +128,13 @@ if page == "Dashboard":
     
     st.divider()
     
-    # Map with simulated status
     st.subheader("🗺️ Monitoring Points Status")
     rng = np.random.default_rng(42)
     map_data = pd.DataFrame({
         "lat": rng.uniform(55.5, 57.0, 20),
         "lon": rng.uniform(8.0, 10.5, 20),
-        "status": rng.choice(["Normal", "Warning", "Critical"], 20, p=[0.7, 0.2, 0.1])
     })
-    # Map colors based on status (Streamlit map doesn't support colors directly, but we can use size or just show)
-    st.map(map_data[["lat", "lon"]])
+    st.map(map_data)
     st.caption("🔴 Critical  🟡 Warning  🟢 Normal (color coding in full version)")
     
     st.divider()
@@ -251,7 +243,7 @@ elif page == "Forecast & Alerts":
 # ==================== Page: Reports ====================
 elif page == "Reports":
     st.title("📄 Compliance Reports")
-    st.caption("Generate a PDF report for municipalities and environmental authorities.")
+    st.caption("Summary of monitoring data for municipalities and environmental authorities.")
     
     st.markdown("""
     This report includes:
@@ -261,37 +253,17 @@ elif page == "Reports":
     - Data sources and methodology
     """)
     
-    if st.button("Generate PDF Report", type="primary"):
-        # Create PDF
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=16)
-        pdf.cell(200, 10, txt="GroundWatch - Groundwater Monitoring Report", ln=True, align='C')
-        pdf.ln(10)
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt=f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
-        pdf.ln(5)
-        pdf.multi_cell(0, 10, txt="This report summarizes the current groundwater levels and forecasted conditions for monitored locations in Denmark.")
-        pdf.ln(5)
-        pdf.cell(200, 10, txt="Summary of Monitoring Points:", ln=True)
-        pdf.cell(200, 10, txt="- Total Points: 124", ln=True)
-        pdf.cell(200, 10, txt="- Active Alerts: 3", ln=True)
-        pdf.cell(200, 10, txt="- Average Water Level: 2.4 m", ln=True)
-        pdf.ln(5)
-        pdf.cell(200, 10, txt="Data Sources: DMI (precipitation), GEUS (groundwater), IoT sensors", ln=True)
-        pdf.ln(10)
-        pdf.cell(200, 10, txt="Prepared by GroundWatch", ln=True)
-        
-        # Output to bytes
-        pdf_output = pdf.output(dest='S').encode('latin-1')
-        
-        st.download_button(
-            label="📥 Download PDF Report",
-            data=pdf_output,
-            file_name="groundwatch_report.pdf",
-            mime="application/pdf"
-        )
-        st.success("✅ Report generated successfully!")
+    st.subheader("📊 Summary Table")
+    report_df = pd.DataFrame({
+        "Location": ["Lemvig", "Ringkøbing-Skjern", "Holstebro", "Struer", "Aarhus"],
+        "Current Level (m)": [1.2, 1.6, 2.1, 1.9, 2.3],
+        "Threshold (m)": [1.5, 1.8, 2.5, 2.0, 2.5],
+        "Status": ["Critical", "Warning", "Normal", "Warning", "Normal"],
+    })
+    st.dataframe(report_df, use_container_width=True)
+    
+    st.info("ℹ️ PDF export will be added in the next version.")
+    st.caption("Data Sources: DMI (precipitation), GEUS (groundwater), IoT sensors")
 
 st.divider()
-st.caption("GroundWatch — MVP v2.0 — Reza Chash")
+st.caption("GroundWatch — MVP v2.1 — Reza Chash")
